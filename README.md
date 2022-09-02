@@ -1,7 +1,7 @@
 ## Outline
 Python code for SLOT frontend is located in ``frontend.py.`` SLOT backend is ``backend.py``. ``runthrough.sh`` is a shell script run SLOT on an input SMT constraint. ``wrapper.sh`` is a convenient way to run large numbers of benchmarks. ``bv-600-raw.csv`` and ``fp-600-raw.csv`` contains the benchmark results used to generate statistics in submitted paper. The several ``multiplyOverflow`` is the motivating example for testing.
 
-##Existing results
+## Existing results
 Results of the 42472 bitvector benchmarks used in the evaluation are given in ``bv-600-raw.csv``. ``fp-600-raw.csv`` constains the data for floating point constraints. The first column is the name of the benchmar. Columns 2-5 give the sizes (bytes) of the original constraint, the frontend translation, the optimized LLVM, and backend translation, respectively. Columns 6-8 are the time taken for frontend translation, optimization, and backend translation, in seconds. The remaining columns give (1) pre-optimization result, pre-optimization time, post-SLOT result, and post-SLOT time. Solvers are in the order Z3, CVC5, and Boolector (for bitvector benchmarks). Any rows for which times are empty indicate that SLOT failed to produce a translation within the 600 second timeout. For evaluation, we count all of these entires as 600 seconds.
 
 ## Requirements
