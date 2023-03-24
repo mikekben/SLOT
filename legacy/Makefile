@@ -1,0 +1,2 @@
+all:
+	g++ -g -fsanitize=address -O1 slot.cpp -I /nethome/bmikek3/z3/src/api -I /nethome/bmikek3/z3/src/api/c++ -I /nethome/bmikek3/z3/build /nethome/bmikek3/z3/build/libz3.so `/nethome/qzhang414/trunk/root-clang/bin/llvm-config --cxxflags --ldflags --system-libs --libs core passes` -fexceptions -o slot

@@ -1,0 +1,4 @@
+#Compiled binaries and object files
+*.o
+slot/main
+legacy/slot
