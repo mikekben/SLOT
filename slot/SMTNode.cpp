@@ -1,5 +1,6 @@
 #include "SMTNode.h"
 #include "SLOTExceptions.h"
+#include "SLOTUtil.h"
 
 namespace SLOT
 {
@@ -34,7 +35,7 @@ namespace SLOT
         assert(contents.is_int());
     }
 
-    Value * IntegerNode::ToLLVM()
+    Value* IntegerNode::ToLLVM()
     {
         if (IsVariable())
         {
@@ -42,7 +43,15 @@ namespace SLOT
         }
         else if (IsConstant())
         {
-            return ConstantInt::get(IntegerType::get(lcx, Width()), contents.to_string(), 10);
+            //Handle negative constants
+            std::string str = contents.to_string();
+            if (str[0]=='(' && str[1]=='-')
+            {
+                str.erase(0,1);
+                str.erase(2,1);
+                str.erase(str.length()-1,1);
+            }
+            return ConstantInt::get(IntegerType::get(lcx, Width()), str, 10);
         }
         else //Expression
         {
@@ -58,10 +67,151 @@ namespace SLOT
                     return builder.CreateAdd(IntegerChild(0).ToLLVM(),IntegerChild(1).ToLLVM());
                 case Z3_OP_MUL:
                     return builder.CreateMul(IntegerChild(0).ToLLVM(),IntegerChild(1).ToLLVM());
-                case Z3_OP_DIV:
+                case Z3_OP_IDIV:
                     return builder.CreateSDiv(IntegerChild(0).ToLLVM(),IntegerChild(1).ToLLVM());
                 case Z3_OP_MOD:
                     return builder.CreateSRem(IntegerChild(0).ToLLVM(),IntegerChild(1).ToLLVM());
+                default:
+                    throw UnsupportedSMTOpException("integer operation", contents);
+            }
+        }
+    }
+    APInt IntegerNode::LargestIntegerConstant()
+    {
+        if (IsVariable())
+        {
+            return APInt();
+        }
+        else if (IsConstant())
+        {
+            //Handle negative constants
+            std::string str = contents.to_string();
+            if (str[0]=='(' && str[1]=='-')
+            {
+                str.erase(0,1);
+                str.erase(1,1);
+                str.erase(str.length()-1,1);
+            }
+
+            //Length in base 10 * 4 (log_2(10) + 1) to guarantee enough width
+            return APInt(str.length()*4, str, 10).abs();
+        }
+        //Expressions (TODO: assumes only integer constraints in children)
+        else if (Op() == Z3_OP_ITE)
+        {
+            APInt cond = BooleanChild(0).LargestIntegerConstant();
+            APInt left = IntegerChild(1).LargestIntegerConstant();
+            APInt right = IntegerChild(2).LargestIntegerConstant();
+            return APMax(cond,APMax(left,right));
+        }
+        else if (Op() == Z3_OP_UMINUS)
+        {
+            return IntegerChild(0).LargestIntegerConstant();
+        }
+        else if (Op() == Z3_OP_INTERNAL) //integer absolute value
+        {
+            return IntegerChild(0).LargestIntegerConstant();
+        }
+        else //Binary integer expressions
+        {
+            return APMax(IntegerChild(0).LargestIntegerConstant(),IntegerChild(1).LargestIntegerConstant());
+        }
+    }
+    APInt IntegerNode::AbstractSingle(APInt assumption)
+    {
+        if (IsVariable())
+        {
+            return assumption;
+        }
+        else if (IsConstant())
+        {
+            //Handle negative constants
+            std::string str = contents.to_string();
+            if (str[0]=='(' && str[1]=='-')
+            {
+                str.erase(0,1);
+                str.erase(1,1);
+                str.erase(str.length()-1,1);
+            }
+
+            //Length in base 10 * 4 (log_2(10) + 1) to guarantee enough width
+            return APInt(str.length()*4, str, 10).abs();
+        }
+        else //Expression
+        {
+            APInt left;
+            APInt right;
+            unsigned bigger;
+            switch (Op())
+            {
+
+                case Z3_OP_ITE:
+                    //Take whichever branch is bigger
+                    return APMax(IntegerChild(1).AbstractSingle(assumption), IntegerChild(2).AbstractSingle(assumption));
+                case Z3_OP_UMINUS:
+                case Z3_OP_INTERNAL: //Integer absolute value
+                    //Only absolute value
+                    return IntegerChild(0).AbstractSingle(assumption);
+                case Z3_OP_SUB:
+                case Z3_OP_ADD:
+                    //Subtraction and addition can both grow (absolute value)
+                    return APPlus(IntegerChild(0).AbstractSingle(assumption),IntegerChild(1).AbstractSingle(assumption));
+                case Z3_OP_MUL:
+                    return APMult(IntegerChild(0).AbstractSingle(assumption),IntegerChild(1).AbstractSingle(assumption));
+                case Z3_OP_IDIV:
+                    //Can't add extra bits
+                    return APDiv(IntegerChild(0).AbstractSingle(assumption),IntegerChild(1).AbstractSingle(assumption));
+                case Z3_OP_MOD:
+                    //Remainder is always smaller than divisor
+                    return IntegerChild(1).AbstractSingle(assumption);
+                default:
+                    throw UnsupportedSMTOpException("integer operation", contents);
+            }
+        }
+    }
+
+    expr IntegerNode::ToSMT(unsigned width, std::map<std::string, expr> svariables)
+    {
+        if (IsVariable())
+        {
+            return svariables.at(contents.to_string());
+        }
+        else if (IsConstant())
+        {
+            //Handle negative constants
+            std::string str = contents.to_string();
+            if (str[0]=='(' && str[1]=='-')
+            {
+                str.erase(0,1);
+                str.erase(1,1);
+                str.erase(str.length()-1,1);
+            }
+
+            return scx.bv_val(str.c_str(), width);
+        }
+        else //Expression
+        {
+            expr val = scx.bool_val(true);
+            switch (Op())
+            {
+                case Z3_OP_ITE:
+                    return ite(BooleanChild(0).ToSMT(width,svariables),IntegerChild(1).ToSMT(width,svariables),IntegerChild(2).ToSMT(width,svariables));
+                case Z3_OP_UMINUS:
+                    return -IntegerChild(0).ToSMT(width,svariables);
+                case Z3_OP_INTERNAL: //integer absolute value
+                    val = IntegerChild(0).ToSMT(width,svariables);
+                    return ite(val < 0, -val, val);
+                case Z3_OP_SUB:
+                    return IntegerChild(0).ToSMT(width,svariables) - IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_ADD:
+                    return IntegerChild(0).ToSMT(width,svariables) + IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_MUL:
+                    return IntegerChild(0).ToSMT(width,svariables) * IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_IDIV:
+                    //division operator overload is signed division
+                    return IntegerChild(0).ToSMT(width,svariables) / IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_MOD:
+                    return mod(IntegerChild(0).ToSMT(width,svariables),IntegerChild(1).ToSMT(width,svariables));
                 default:
                     throw UnsupportedSMTOpException("integer operation", contents);
             }
@@ -234,6 +384,197 @@ namespace SLOT
         }
     }
 
+    APInt BooleanNode::LargestIntegerConstant()
+    {
+        //Boolean constants and variables don't contribute (i.e. 0)
+        if (IsVariable() || IsConstant())
+        {
+            return APInt();
+        }
+        //Expressions (TODO: assumes only integer constraints in children)
+        else if (Op() == Z3_OP_NOT)
+        {
+            return BooleanChild(0).LargestIntegerConstant();
+        }
+        else if (Op() == Z3_OP_AND || Op() == Z3_OP_OR || Op() == Z3_OP_XOR || Op() == Z3_OP_ITE || (Op() == Z3_OP_DISTINCT && contents.arg(0).is_bool()))
+        {
+            //Note: ITE always has exactly 3 arguments
+            APInt val = BooleanChild(0).LargestIntegerConstant();
+            for (int i = 1; i < contents.num_args(); i++)
+            {
+                val = APMax(val,BooleanChild(i).LargestIntegerConstant());
+            }
+            return val;
+        }
+        else if (Op() == Z3_OP_IMPLIES || (Op() == Z3_OP_EQ && contents.arg(0).is_bool()))
+        {
+            return APMax(BooleanChild(0).LargestIntegerConstant(),BooleanChild(1).LargestIntegerConstant());
+        }
+        else if (Op() == Z3_OP_LE || Op() == Z3_OP_LT || Op() == Z3_OP_GE || Op() == Z3_OP_GT || (Op() == Z3_OP_EQ && contents.arg(0).is_int()))
+        {
+            return APMax(IntegerChild(0).LargestIntegerConstant(),IntegerChild(1).LargestIntegerConstant());
+        }
+        else if (Op() == Z3_OP_DISTINCT && contents.arg(0).is_bool())
+        {
+            APInt val = IntegerChild(0).LargestIntegerConstant();
+            for (int i = 1; i < contents.num_args(); i++)
+            {
+                val = APMax(val,IntegerChild(i).LargestIntegerConstant());
+            }
+            return val;
+        }
+        else
+        {
+            throw UnsupportedSMTOpException("largest constant computation with non-integer elements", contents);
+        }
+    }
+    APInt BooleanNode::AbstractSingle(APInt assumption)
+    {
+        //Boolean constants and variables don't contribute (i.e. 0)
+        if (IsVariable() || IsConstant())
+        {
+            return APInt();
+        }
+        //Expressions (TODO: assumes only integer constraints in children)
+        else if (Op() == Z3_OP_NOT)
+        {
+            return BooleanChild(0).AbstractSingle(assumption);
+        }
+        else if (Op() == Z3_OP_AND || Op() == Z3_OP_OR || Op() == Z3_OP_XOR || Op() == Z3_OP_ITE || (Op() == Z3_OP_DISTINCT && contents.arg(0).is_bool()))
+        {
+            //Note: ITE always has exactly 3 arguments
+            APInt val = BooleanChild(0).AbstractSingle(assumption);
+            for (int i = 1; i < contents.num_args(); i++)
+            {
+                val = APMax(val,BooleanChild(i).AbstractSingle(assumption));
+            }
+            return val;
+        }
+        else if (Op() == Z3_OP_IMPLIES || (Op() == Z3_OP_EQ && contents.arg(0).is_bool()))
+        {
+            return APMax(BooleanChild(0).AbstractSingle(assumption),BooleanChild(1).AbstractSingle(assumption));
+        }
+        else if (Op() == Z3_OP_LE || Op() == Z3_OP_LT || Op() == Z3_OP_GE || Op() == Z3_OP_GT || (Op() == Z3_OP_EQ && contents.arg(0).is_int()))
+        {
+            return APMax(IntegerChild(0).AbstractSingle(assumption),IntegerChild(1).AbstractSingle(assumption));
+        }
+        else if (Op() == Z3_OP_DISTINCT && contents.arg(0).is_bool())
+        {
+            APInt val = IntegerChild(0).AbstractSingle(assumption);
+            for (int i = 1; i < contents.num_args(); i++)
+            {
+                val = APMax(val,IntegerChild(i).AbstractSingle(assumption));
+            }
+            return val;
+        }
+        else
+        {
+            throw UnsupportedSMTOpException("largest constant computation with non-integer elements", contents);
+        }
+    }
+    expr BooleanNode::ToSMT(unsigned width, std::map<std::string, expr> svariables)
+    {
+        if (IsVariable())
+        {
+            return svariables.at(contents.to_string());
+        }
+        else if (IsConstant())
+        {
+            return scx.bool_val(contents.bool_value()==Z3_L_TRUE);
+        }
+        else //Expression case
+        {
+            //Never used, but has to be initialized
+            expr temp = scx.bool_val(true);
+            expr left = scx.bool_val(true);
+            expr right = scx.bool_val(true);
+            switch (Op())
+            {
+                //Boolean only operations
+                case Z3_OP_NOT:
+                    return !BooleanChild(0).ToSMT(width,svariables);
+                case Z3_OP_AND:
+                    temp = BooleanChild(0).ToSMT(width, svariables);
+                    for (int i = 1; i < contents.num_args(); i++)
+                    {
+                        temp = temp && BooleanChild(i).ToSMT(width, svariables);
+                    }
+                    return temp;
+                case Z3_OP_OR:
+                    temp = BooleanChild(0).ToSMT(width, svariables);
+                    for (int i = 1; i < contents.num_args(); i++)
+                    {
+                        temp = temp || BooleanChild(i).ToSMT(width, svariables);
+                    }
+                    return temp;
+                case Z3_OP_XOR:
+                    temp = BooleanChild(0).ToSMT(width, svariables);
+                    for (int i = 1; i < contents.num_args(); i++)
+                    {
+                        temp = temp ^ BooleanChild(i).ToSMT(width, svariables);
+                    }
+                    return temp;
+                case Z3_OP_IMPLIES:
+                    return implies(BooleanChild(0).ToSMT(width,svariables),BooleanChild(1).ToSMT(width,svariables));
+                case Z3_OP_ITE:
+                    return ite(BooleanChild(0).ToSMT(width,svariables),BooleanChild(1).ToSMT(width,svariables),BooleanChild(2).ToSMT(width,svariables));
+                //Integer comparisons
+                case Z3_OP_LE:
+                    return IntegerChild(0).ToSMT(width,svariables) <= IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_LT:
+                    return IntegerChild(0).ToSMT(width,svariables) < IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_GE:
+                    return IntegerChild(0).ToSMT(width,svariables) >= IntegerChild(1).ToSMT(width,svariables);
+                case Z3_OP_GT:
+                    return IntegerChild(0).ToSMT(width,svariables) > IntegerChild(1).ToSMT(width,svariables);
+                //equal and distinct comparisons (children can be any sort)
+                case Z3_OP_EQ:
+                    //Z3 parser converts = with more than 2 children into pairwise checks
+                    assert(contents.num_args()==2);
+                    //Boolean, bitvector, and integer are all integer (bitwise) comparison
+                    if (contents.arg(0).is_bool())
+                    {
+                        return BooleanChild(0).ToSMT(width,svariables) == BooleanChild(1).ToSMT(width,svariables);
+                    }
+                    else if (contents.arg(0).is_int())
+                    {
+                        return IntegerChild(0).ToSMT(width,svariables) == IntegerChild(1).ToSMT(width,svariables);
+                    }
+                    else
+                    {
+                        UnsupportedSMTOpException("= comparison with unsupported child type", contents);
+                    }
+                case Z3_OP_DISTINCT:
+                    if (contents.num_args() < 2)
+                    {
+                        throw UnsupportedSMTOpException("distinct comparison with less than 2 children", contents);
+                    }
+                    else if (contents.num_args() == 2)
+                    {
+                        if (contents.arg(0).is_bool())
+                        {
+                            return BooleanChild(0).ToSMT(width,svariables) != BooleanChild(1).ToSMT(width,svariables);
+                        }
+                        else if (contents.arg(0).is_int())
+                        {
+                            return IntegerChild(0).ToSMT(width,svariables) != IntegerChild(1).ToSMT(width,svariables);
+                        }
+                        else
+                        {
+                            UnsupportedSMTOpException("= comparison with unsupported child type", contents);
+                        }
+                    }
+                    else
+                    {
+                        //Check pairwise inequality for all pairs
+                        throw NotImplementedException();
+                    }
+                default:
+                    throw UnsupportedSMTOpException("boolean operation", contents);
+            }
+        }
+    }
+
 
     //==========================BitvectorNode==================================
 
@@ -248,6 +589,19 @@ namespace SLOT
     Value * BitvectorNode::ToLLVM()
     {
         return ConstantInt::get(IntegerType::get(lcx,Width()), 0);
+    }
+
+    APInt BitvectorNode::LargestIntegerConstant()
+    {
+        throw UnsupportedSMTOpException("largest constant computation on bitvector value", contents);
+    }
+    APInt BitvectorNode::AbstractSingle(APInt assumption)
+    {
+        throw UnsupportedSMTOpException("abstract interpretation on bitvector value", contents);
+    }
+    expr BitvectorNode::ToSMT(unsigned width, std::map<std::string, expr> svariables)
+    {
+        throw UnsupportedSMTOpException("converstion to smt for bitvector value", contents);
     }
 
 
@@ -336,5 +690,19 @@ namespace SLOT
     {
         return ConstantFP::getNaN(FloatingNode::ToFloatingType(lcx, contents.to_string(), Width()));
     }
+
+    APInt FloatingNode::LargestIntegerConstant()
+    {
+        throw UnsupportedSMTOpException("largest constant computation on floating value", contents);
+    }
+    APInt FloatingNode::AbstractSingle(APInt assumption)
+    {
+        throw UnsupportedSMTOpException("abstract interpretation on floating value", contents);
+    }
+    expr FloatingNode::ToSMT(unsigned width, std::map<std::string, expr> svariables)
+    {
+        throw UnsupportedSMTOpException("converstion to smt for floating value", contents);
+    }
+
     
 }

@@ -8,6 +8,7 @@
 (declare-fun x2 () Int)
 (declare-fun x3 () Int)
 (declare-fun x4 () Int)
-(assert (let ((?v_0 (+ x1 x2))) (and (> ?v_0 0) (< ?v_0 3) (= x1 (* 3 x3)) (= x2 (* 6 x4)))))
+(declare-fun z () Bool)
+(assert (or (> (+ x1 x2) (mod (abs x2) 20)) z (and (> -15 (- x3 x4)) (> 5 (ite (<= x1 3) (* x1 4) (div x1 4))))))
 (check-sat)
 (exit)

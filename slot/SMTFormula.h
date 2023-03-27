@@ -20,5 +20,8 @@ namespace SLOT
 
             SMTFormula(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, std::string t_string);
             void ToLLVM();
+            APInt LargestIntegerConstant();
+            APInt AbstractSingle(APInt assumption);
+            void ToSMT(unsigned width, solver* sol);
     };
 }

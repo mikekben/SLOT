@@ -63,6 +63,9 @@ namespace SLOT
       SMTNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
       virtual ~SMTNode() {}
       virtual Value* ToLLVM() = 0;
+      virtual APInt LargestIntegerConstant() = 0;
+      virtual APInt AbstractSingle(APInt assumption) = 0;
+      virtual expr ToSMT(unsigned width, std::map<std::string, expr> svariables) = 0;
   };
 
 
@@ -76,6 +79,9 @@ namespace SLOT
 
       static bool IsComparison(expr expression);
       Value* ToLLVM() override;
+      APInt LargestIntegerConstant() override;
+      APInt AbstractSingle(APInt assumption) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
       IntegerNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -103,6 +109,9 @@ namespace SLOT
 
 
       Value* ToLLVM() override;
+      APInt LargestIntegerConstant() override;
+      APInt AbstractSingle(APInt assumption) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
       FloatingNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -121,6 +130,9 @@ namespace SLOT
       static Value * LlURem(Value * left, Value * right);
 
       Value* ToLLVM() override;
+      APInt LargestIntegerConstant() override;
+      APInt AbstractSingle(APInt assumption) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
       BitvectorNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -131,6 +143,9 @@ namespace SLOT
     public:
 
       Value* ToLLVM() override;
+      APInt LargestIntegerConstant() override;
+      APInt AbstractSingle(APInt assumption) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
       BooleanNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 }

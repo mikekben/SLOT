@@ -1,8 +1,9 @@
 #include "SMTFormula.h"
 #include "SLOTExceptions.h"
+#include "SLOTUtil.h"
 #include <regex>
 
-#define PLACEHOLDER_WIDTH 1
+#define PLACEHOLDER_WIDTH 2
 #define LLVM_FUNCTION_NAME "SMT"
 
 namespace SLOT
@@ -14,7 +15,6 @@ namespace SLOT
         std::smatch m;
         std::regex e (R"(\((declare-fun\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*\(\s*\)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Int|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*|declare-const\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Int|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*)\))");
 
-        std::cout << "starting regex\n";
         std::vector<Type*> types;
         std::vector<std::string> names;
         while (std::regex_search (s,m,e)) 
@@ -71,7 +71,6 @@ namespace SLOT
             s = m.suffix().str();
         }
 
-        std::cout << "done with regex\n";
 
         //Create function
         FunctionType* fnty = FunctionType::get(Type::getInt1Ty(lcx),types,false);
@@ -111,5 +110,47 @@ namespace SLOT
         }
 
         builder.CreateRet(temp);
+    }
+
+    APInt SMTFormula::LargestIntegerConstant()
+    {
+        APInt val = APInt();
+        for (BooleanNode n : assertions)
+        {
+            val = APMax(val,n.LargestIntegerConstant());
+        }
+        return val;
+    }
+
+    APInt SMTFormula::AbstractSingle(APInt assumption)
+    {
+        APInt val = APInt();
+        for (BooleanNode n : assertions)
+        {
+            val = APMax(val,n.AbstractSingle(assumption));
+        }
+        return val;
+    }
+    void SMTFormula::ToSMT(unsigned width, solver* sol)
+    {
+        std::map<std::string, expr> svariables;
+        for (auto s : variables)
+        {
+            //Assumes only integer/boolean values
+            //1-wide integer --> boolean
+            if (variables[s.first]->getType()->getIntegerBitWidth() == 1)
+            {
+                svariables.insert(make_pair(s.first, scx.bool_const(s.first.c_str())));
+            }
+            else
+            {
+                svariables.insert(make_pair(s.first, scx.bv_const(s.first.c_str(),width)));
+            }
+        }
+
+        for (BooleanNode n : assertions)
+        {
+            sol->add(n.ToSMT(width, svariables));
+        }
     }
 }
