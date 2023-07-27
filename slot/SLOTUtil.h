@@ -1,3 +1,7 @@
+#ifndef PAIR
+#define PAIR std::pair<APInt,unsigned>
+#endif
+
 namespace SLOT
 {
     inline APInt APMax(APInt left, APInt right)
@@ -70,6 +74,28 @@ namespace SLOT
         }
 
         return val;
+    }
+
+
+    inline PAIR PairMax(PAIR left, PAIR right)
+    {
+        return {APMax(left.first,right.first), (left.second > right.second) ? left.second : right.second};
+    }
+
+    inline PAIR PairPlus(PAIR left, PAIR right)
+    {
+        return {APPlus(left.first,right.first), (left.second > right.second) ? left.second : right.second};
+    }
+
+    inline PAIR PairMult(PAIR left, PAIR right)
+    {
+        return {APMult(left.first,right.first), left.second + right.second};
+    }
+
+    inline PAIR PairDiv(PAIR left, PAIR right)
+    {
+        //This is the source of underapproximation :(
+        return {APDiv(left.first,right.first), left.second + right.second};
     }
     
 }

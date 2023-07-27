@@ -20,8 +20,11 @@
 
 #include <iostream>
 
-
 #include"z3++.h"
+
+#ifndef PAIR
+#define PAIR std::pair<APInt,unsigned>
+#endif
 
 using namespace llvm;
 using namespace z3;
@@ -32,6 +35,7 @@ namespace SLOT
   class FloatingNode;
   class BitvectorNode;
   class BooleanNode;
+  class RealNode;
 
   class SMTNode
   {
@@ -43,7 +47,7 @@ namespace SLOT
       unsigned integer_width;
       const std::map<std::string, Value *>& variables;
       expr contents;
-      
+      bool noOverflow = true;
 
       //Z3 ''constants'' can be either variables or constants
       inline bool IsVariable() { return contents.is_const() && variables.count(contents.to_string()); }
@@ -59,14 +63,39 @@ namespace SLOT
       inline BitvectorNode BitvectorChild(int index);
       inline BooleanNode BooleanChild(expr cont);
       inline BooleanNode BooleanChild(int index);
+      inline RealNode RealChild(expr cont);
+      inline RealNode RealChild(int index);
 
       SMTNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
       virtual ~SMTNode() {}
       virtual Value* ToLLVM() = 0;
       virtual APInt LargestIntegerConstant() = 0;
       virtual APInt AbstractSingle(APInt assumption) = 0;
-      virtual expr ToSMT(unsigned width, std::map<std::string, expr> svariables) = 0;
+      virtual expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) = 0;
   };
+
+
+  //--------------------------------------------------------------------------------
+
+
+  class RealNode : public SMTNode
+  {
+    public:
+      inline unsigned Width() { return integer_width; } //For possible extension
+
+      static bool IsComparison(expr expression);
+      Value* ToLLVM() override;
+      APInt LargestIntegerConstant() override;
+      APInt AbstractSingle(APInt assumption) override;
+
+      PAIR LargestPreciseConstant();
+      PAIR AbstractFloat(PAIR assumption);
+      expr ToSMTFloat(z3::sort type, std::map<std::string, expr> svariables);
+
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) override;
+      RealNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
+  };
+
 
 
   //--------------------------------------------------------------------------------
@@ -81,7 +110,7 @@ namespace SLOT
       Value* ToLLVM() override;
       APInt LargestIntegerConstant() override;
       APInt AbstractSingle(APInt assumption) override;
-      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) override;
       IntegerNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -111,7 +140,7 @@ namespace SLOT
       Value* ToLLVM() override;
       APInt LargestIntegerConstant() override;
       APInt AbstractSingle(APInt assumption) override;
-      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) override;
       FloatingNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -132,7 +161,7 @@ namespace SLOT
       Value* ToLLVM() override;
       APInt LargestIntegerConstant() override;
       APInt AbstractSingle(APInt assumption) override;
-      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) override;
       BitvectorNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 
@@ -145,7 +174,12 @@ namespace SLOT
       Value* ToLLVM() override;
       APInt LargestIntegerConstant() override;
       APInt AbstractSingle(APInt assumption) override;
-      expr ToSMT(unsigned width, std::map<std::string, expr> svariables) override;
+      expr ToSMT(unsigned width, std::map<std::string, expr> svariables, solver* sol) override;
+      
+      PAIR LargestPreciseConstant();
+      PAIR AbstractFloat(PAIR assumption);
+      expr ToSMTFloat(z3::sort type, std::map<std::string, expr> svariables);
+
       BooleanNode(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, unsigned t_integer_width, const std::map<std::string, Value*>& t_variables, expr t_contents);
   };
 }

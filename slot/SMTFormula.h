@@ -1,5 +1,9 @@
 #include "SMTNode.h"
 
+#ifndef PAIR
+#define PAIR std::pair<APInt,unsigned>
+#endif
+
 namespace SLOT
 {
     class SMTFormula
@@ -23,5 +27,11 @@ namespace SLOT
             APInt LargestIntegerConstant();
             APInt AbstractSingle(APInt assumption);
             void ToSMT(unsigned width, solver* sol);
+
+            PAIR LargestPreciseConstant();
+            PAIR AbstractFloat(PAIR assumption);
+            void ToSMTFloat(unsigned ebits, unsigned sbits, solver* sol);
+
+            bool CheckAssignment(model m);
     };
 }
