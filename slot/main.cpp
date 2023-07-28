@@ -1,14 +1,51 @@
 #include "SMTFormula.h"
+#include "LLVMFunction.h"
 #include <fstream>
 #include <streambuf>
 #include <sstream>
-#include "SLOTUtil.h"
+#include <chrono>
 
-#ifndef PAIR
-#define PAIR std::pair<APInt,unsigned>
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SCCP.h"
+#include "llvm/Transforms/Scalar/DCE.h"
+#include "llvm/Transforms/Scalar/ADCE.h"
+#include "llvm/Transforms/Scalar/InstSimplifyPass.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+
+#ifndef LLMAPPING
+#define LLMAPPING std::map<std::string, Value*>&
+#endif
+
+#ifndef LLVM_FUNCTION_NAME
+#define LLVM_FUNCTION_NAME "SMT"
 #endif
 
 using namespace SLOT;
+using namespace std::chrono;
+
+
+void Help()
+{
+    std::cout << "SLOT arguments:\n";
+    std::cout << "   -h             : See help menu\n";
+    std::cout << "   -s <file>      : The input SMTLIB2 format file (required)\n";
+    std::cout << "   -o <file>      : The output file. If not provided, output is sent to stdout\n";
+    std::cout << "   -lu <file>     : Output intermediade LLVM IR before optimization (optional)\n";
+    std::cout << "   -lo <file>     : Output intermediade LLVM IR after optimization (optional)\n";
+    std::cout << "   -m             : Convert constant shifts to multiplication\n";
+    std::cout << "   -t <file>      : Output statistics file. If not provided, output is sent to stdout\n";
+    std::cout << "   -pall          : Run all relevant passes (roughly equivalent to -O3 in LLVM). By default, no passes are run\n";
+    std::cout << "   -instcombine   : Run instcombine pass\n";
+    std::cout << "   -ainstcombine  : Run aggressive instcombine pass\n";
+    std::cout << "   -reassociate   : Run reassociate pass\n";
+    std::cout << "   -sccp          : Run sparse conditional constant propagation (SCCP) pass\n";
+    std::cout << "   -dce           : Run dead code elimination (DCE) pass\n";
+    std::cout << "   -adce          : Run aggressive dead code elminination (ADCE) pass\n";
+    std::cout << "   -instsimplify  : Run instsimplify pass\n";
+    std::cout << "   -gvn           : Run global value numbering (GVN) pass\n";
+}
 
 //Not safe: assumes HasFlag returned true and that there is an argument after the flag of interest
 char* GetFlag(int argc, char* argv[], const std::string &flag)
@@ -33,212 +70,286 @@ bool HasFlag(int argc, char* argv[], const std::string& flag)
     }
   }
   return false;
-
-
-
-
 }
+
+#define INST_COMBINE 1
+#define AG_INST_COMBINE 2
+#define REASSOCIATE 4
+#define SCCP 8
+#define DCE 16
+#define ADCE 32
+#define INST_SIMPLIFY 64
+#define GVN 128
+
+unsigned short ParsePasses(int argc, char* argv[])
+{
+  if (HasFlag(argc, argv, "-pall"))
+  {
+    return ~0;
+  }
+  else
+  {
+    unsigned short toReturn = 0;
+    if (HasFlag(argc, argv, "-instcombine")) { toReturn |= INST_COMBINE; }
+    if (HasFlag(argc, argv, "-ainstcombine")) { toReturn |= AG_INST_COMBINE; }
+    if (HasFlag(argc, argv, "-reassociate")) { toReturn |= REASSOCIATE; }
+    if (HasFlag(argc, argv, "-sccp")) { toReturn |= SCCP; }
+    if (HasFlag(argc, argv, "-dce")) { toReturn |= DCE; }
+    if (HasFlag(argc, argv, "-adce")) { toReturn |= ADCE; }
+    if (HasFlag(argc, argv, "-instsimplify")) { toReturn |= INST_SIMPLIFY; }
+    if (HasFlag(argc, argv, "-gvn")) { toReturn |= GVN; }
+    return toReturn;
+  }
+}
+
+std::string PrintPasses(unsigned short flags)
+{
+  return ((flags & INST_COMBINE) ? "1" : "0") + ((std::string)",") +
+         ((flags & AG_INST_COMBINE) ? "1" : "0") + "," +
+         ((flags & REASSOCIATE) ? "1" : "0") + "," +
+         ((flags & SCCP) ? "1" : "0") + "," +
+         ((flags & DCE) ? "1" : "0") + "," +
+         ((flags & ADCE) ? "1" : "0") + "," +
+         ((flags & INST_SIMPLIFY) ? "1" : "0") + "," +
+         ((flags & GVN) ? "1" : "0");
+}
+
+unsigned short RunPasses(unsigned short flags, Function& fun)
+{
+  //instcombine and agressive instcombine are run twice, according to the -O3 optimization pass sequence
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+
+  PassBuilder PB;
+
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+  int count = fun.getEntryBlock().sizeWithoutDebug();
+  unsigned short used = 0;
+
+  if (flags & INST_COMBINE)
+  {
+    InstCombinePass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= INST_COMBINE;
+    }
+  }
+
+  if (flags & AG_INST_COMBINE)
+  {
+    AggressiveInstCombinePass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= AG_INST_COMBINE;
+    }
+  }
+
+  if (flags & REASSOCIATE)
+  {
+    ReassociatePass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= REASSOCIATE;
+    }
+  }
+
+  if (flags & SCCP)
+  {
+    SCCPPass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= SCCP;
+    }
+  }
+
+  if (flags & DCE)
+  {
+    DCEPass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= DCE;
+    }
+  }
+
+  if (flags & ADCE)
+  {
+    ADCEPass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= ADCE;
+    }
+  }
+
+  if (flags & INST_SIMPLIFY)
+  {
+    InstSimplifyPass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= INST_SIMPLIFY;
+    }
+  }
+  
+  if (flags & GVN)
+  {
+    GVNPass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= GVN;
+    }
+  }
+
+  if (flags & INST_COMBINE)
+  {
+    InstCombinePass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= INST_COMBINE;
+    }
+  }
+
+  if (flags & AG_INST_COMBINE)
+  {
+    AggressiveInstCombinePass().run(fun, FAM);
+    if (fun.getEntryBlock().sizeWithoutDebug() != count)
+    {
+      count = fun.getEntryBlock().sizeWithoutDebug();
+      used |= AG_INST_COMBINE;
+    }
+  }
+
+  return used;
+}
+
+
 
 
 int main(int argc, char* argv[])
 {
+  bool shiftToMultiply = false;
   //UI parsing
   if(HasFlag(argc, argv, "-h"))
-    {
-        std::cout << "-s <FILE>               Input .smt2 file\n";
-        std::cout << "-o <FILE>               Output .smt2 file\n";
-        std::cout << "-t <FILE>               Statistics output file\n";
-        std::cout << "-r <ebits,sbits|aix|aix4>    Real numbers: if integer exponent and significant bits are specified, uses those. If aix, uses abstract interpretation. If aix4, uses standard 16/32/64/128 width domain.\n";
-        std::cout << "-i <N|aix|aix2>              Integers: if integer N is given uses this fixed withd; if aix, uses abstract interpretation, if aix2, uses abstract interpretation with domain of powers of 2.\n";
-        std::cout << "Either real number of integer must be specified.\n";
-        return 0;
-    }
-
-    if ((!HasFlag(argc, argv, "-r") && !HasFlag(argc, argv, "-i")) || (HasFlag(argc, argv, "-r") && HasFlag(argc, argv, "-i")))
-    {
-      std::cout << "Must use either -r for real numbers or -i for integers\n";
-      return 1;
-    }
-
-    bool useInteger;
-    int useIntegerWidth = 0;
-    int useRealEB = 0;
-    int useRealSB = 0;
-    if (HasFlag(argc, argv, "-i"))
-    {
-      useInteger = true;
-      std::string val = GetFlag(argc,argv,"-i");
-      if(val == "aix")
-      {
-        useIntegerWidth = -1;
-      }
-      else
-      {
-        useIntegerWidth = std::stoi(val);
-        assert(useIntegerWidth > 0);
-      }
-    }
-    else
-    {
-      useInteger = false;
-      std::string val = GetFlag(argc,argv,"-r");
-      if (val == "aix")
-      {
-        useRealEB = -1;
-        useRealSB = -1;
-      }
-      else
-      {
-        std::stringstream ss(val);
-        char comma;
-        ss >> useRealEB >> comma >> useRealSB;
-        assert(useRealEB >= 2);
-        assert(useRealSB >= 3);
-      }
-    }
-
-
-    if(!HasFlag(argc, argv, "-s"))
-    {
-        std::cout << "Must specify input file with -s.\n";
-        return 1;
-    }
-    char * inputFilename = GetFlag(argc, argv, "-s");
-
-
-    std::vector<std::string> stats;
-    stats.push_back(inputFilename);
-
-
-    //LLVM and Z3 setup
-    LLVMContext lcx;
-    Module lmodule = Module(inputFilename, lcx);
-    IRBuilder builder = IRBuilder(lcx);
-    context scx;
-    scx.set_rounding_mode(RNE);
-
-    //Read from file
-    std::ifstream t(inputFilename);
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    std::string smt_str = buffer.str();
-    bool checkResult = true;
-
-
-
-    SMTFormula a = SMTFormula(scx, lcx, &lmodule, builder, smt_str);
-
-    solver sol(scx);
-
-    if (useInteger)
-    {
-      stats.push_back("integer");
-      if (useIntegerWidth == -1) //Abstract interpretation case
-      {
-        //If no constants, assume 1 to model the number of variables
-        APInt largest = APMax(APInt(2,1),a.LargestIntegerConstant());
-        APInt aiResult = a.AbstractSingle(largest);
-        //aiResult.dump();
-        //Add 1 for signed, add 1 for buffer
-        useIntegerWidth = aiResult.ceilLogBase2()+2;
-        useIntegerWidth = useIntegerWidth < 3 ? 3 : useIntegerWidth;
-        stats.push_back(toString(largest,10,false).c_str());
-        stats.push_back(toString(aiResult,10,false).c_str());
-      }
-      stats.push_back(std::to_string(useIntegerWidth));
-      a.ToSMT(useIntegerWidth,&sol);
-    }
-    else
-    {
-      stats.push_back("real");
-      if (useRealEB == -1) //Abstract interpretation case
-      {
-        //If no constants, assume 1 to model the number of variables
-        PAIR largest = PairMax({APInt(2,1),1},a.LargestPreciseConstant());
-        PAIR aiResult = a.AbstractFloat(largest);
-        //Add 1 as buffer; 1 more becuase of sbits semantics in SMTLIB
-        unsigned val = aiResult.first.ceilLogBase2()+1;
-        useRealEB = 0;
-        while (val >>= 1) ++useRealEB; //Integer log_2
-        useRealEB++;
-        useRealSB = aiResult.second+2;
-
-        useRealEB = useRealEB < 2 ? 2 : useRealEB;
-        useRealSB = useRealSB < 3 ? 3 : useRealSB;
-        stats.push_back(toString(largest.first,10,false).c_str());
-        stats.push_back(std::to_string(largest.second));
-        stats.push_back(toString(aiResult.first,10,false).c_str());
-        stats.push_back(std::to_string(aiResult.second));
-      }
-      stats.push_back(std::to_string(useRealEB));
-      stats.push_back(std::to_string(useRealSB));
-      a.ToSMTFloat(useRealEB,useRealSB,&sol);
-
-    }
-
-
-    /*char * outputFilename = "./things.smt2";
-    std::ofstream out(outputFilename);
-    out << sol.to_smt2();
-    out.close();*/
-
-    sol.set(":timeout", 300000u);
-    sol.set(":memory_max_size", 5120u);
-
-    // initialization
-    bool isSat = sol.check() == z3::sat;
-    
-
-    if (isSat)
-    {
-      model m = sol.get_model();
-      //std::cout << m.to_string() << "\n";
-      //std::cout << "-------\n";
-      checkResult = a.CheckAssignment(m);
-      if (checkResult)
-      {
-        stats.push_back("result");
-      }
-      else
-      {
-        stats.push_back("sat_underapproximation");
-      }
-    }
-    else
-    {
-      stats.push_back("unsat_underapproximation");
-    }
-
-    if(HasFlag(argc, argv, "-o"))
-    {
-      char * outputFilename = GetFlag(argc, argv, "-o");
-      std::ofstream out(outputFilename);
-      out << sol.to_smt2();
-      out.close();
-    }
-
-
-    char * statFilename;
-
-    if (HasFlag(argc, argv, "-t") && (statFilename = GetFlag(argc, argv, "-t")))
-    {
-      std::ofstream stat_out(statFilename, std::ios_base::app);
-      for (std::string s : stats)
-      {
-        stat_out << s;
-        stat_out << ",";
-      }
-      stat_out << "\n";
-      stat_out.close();
-    }
-    else
-    {
-      for (std::string s : stats)
-      {
-        std::cout << s;
-        std::cout << ",";
-      }
-      std::cout << "\n";
-    }
+  {
+    Help();
     exit(0);
+  }
+  if (HasFlag(argc, argv, "-m"))
+  {
+    shiftToMultiply = true;
+  }
+
+  if(!HasFlag(argc, argv, "-s"))
+  {
+    std::cout << "Must specify input file with -s.\n";
+    return 1;
+  }
+  char * inputFilename = GetFlag(argc, argv, "-s");
+  if (!inputFilename)
+  {
+    std::cout << "Invalid input file name.\n";
+    return 1;
+  }
+
+  //LLVM and Z3 setup
+  LLVMContext lcx;
+  Module lmodule = Module(inputFilename, lcx);
+  IRBuilder builder = IRBuilder(lcx);
+
+  std::ifstream t(inputFilename);
+  std::stringstream buffer;
+  buffer << t.rdbuf();
+  std::string smt_str = buffer.str();
+
+  
+  //Frontend translation
+  auto frontStart = high_resolution_clock::now();
+  SMTFormula a = SMTFormula(lcx, &lmodule, builder, smt_str, LLVM_FUNCTION_NAME);
+  a.ToLLVM();
+  auto frontEnd = high_resolution_clock::now();
+  duration<double> frontTime = frontEnd - frontStart;
+  //Frontend translation
+
+
+
+  Function *fun = lmodule.getFunction(LLVM_FUNCTION_NAME);
+  unsigned short parsedPasses = ParsePasses(argc, argv);
+
+
+  char * luFilename;
+  if(HasFlag(argc, argv, "-lu") && (luFilename = GetFlag(argc, argv, "-lu")))
+  {
+    raw_fd_ostream file(luFilename, *(new std::error_code()));
+    lmodule.print(file, nullptr);
+  }
+
+
+  //Optimization
+  auto optStart = high_resolution_clock::now();
+  unsigned short usedPasses = RunPasses(parsedPasses, *fun);
+  auto optEnd = high_resolution_clock::now();
+  duration<double> optTime = optEnd - optStart;
+  //Optimization
+
+
+  char * loFilename;
+  if(HasFlag(argc, argv, "-lo") && (loFilename = GetFlag(argc, argv, "-lo")))
+  {
+    raw_fd_ostream file(loFilename, *(new std::error_code()));
+    lmodule.print(file, nullptr);
+  }
+
+
+  context c;
+  solver s(c);
+
+
+  //Backend translation
+  auto backStart = high_resolution_clock::now();
+  LLVMFunction f = LLVMFunction(shiftToMultiply, c, fun);
+  s.add(f.ToSMT());
+  auto backEnd = high_resolution_clock::now();
+  duration<double> backTime = backEnd - backStart;
+  //Backend translation
+
+
+
+  //Print output constraint
+  char * outputFilename;
+  if(HasFlag(argc, argv, "-o") && (outputFilename = GetFlag(argc, argv, "-o")))
+  {
+    std::ofstream out(outputFilename);
+    out << s.to_smt2();
+  }
+  else
+  {
+    std::cout << s.to_smt2();
+  }
+
+  //Print statistics
+  char * statsFilename;
+  if(HasFlag(argc, argv, "-t") && (statsFilename = GetFlag(argc, argv, "-t")))
+  {
+    std::ofstream out(outputFilename);
+    out << inputFilename << "," << (shiftToMultiply ? "true" : "false") << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
+  }
+  else
+  {
+    std::cout << inputFilename << "," << (shiftToMultiply ? "true" : "false") << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
+  }
+  
 }

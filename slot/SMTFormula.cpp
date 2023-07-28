@@ -1,22 +1,22 @@
 #include "SMTFormula.h"
 #include "SLOTExceptions.h"
-#include "SLOTUtil.h"
 #include <regex>
 
-#define PLACEHOLDER_WIDTH 2
-#define LLVM_FUNCTION_NAME "SMT"
-#ifndef PAIR
-#define PAIR std::pair<APInt,unsigned>
+#ifndef LLMAPPING
+#define LLMAPPING std::map<std::string, Value*>
 #endif
 
 namespace SLOT
 {
-    SMTFormula::SMTFormula(context& t_scx, LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, std::string t_string) : scx(t_scx), lcx(t_lcx), lmodule(t_lmodule), builder(t_builder), string(t_string), contents(t_scx)
+    static context c;
+
+    SMTFormula::SMTFormula(LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, std::string t_string, std::string t_func_name) : lcx(t_lcx), lmodule(t_lmodule), builder(t_builder), string(t_string), contents(c), func_name(t_func_name)
     {
+        //context c;
         //Regular expression matching to get variables
         std::string s = string;
         std::smatch m;
-        std::regex e (R"(\((declare-fun\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*\(\s*\)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Real|Int|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*|declare-const\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Real|Int|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*)\))");
+        std::regex e (R"(\((declare-fun\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*\(\s*\)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*|declare-const\s(\|.*\||[\~\!\@\$\%\^\&\*_\-\+\=\<\>\.\?\/A-Za-z0-9]+)\s*(\(\s*_\s*FloatingPoint\s*(\d+)\s*(\d+)\s*\)|Float16|Float32|Float64|Float128|FPN|Bool|\(\s*_\s*BitVec\s*(\d+)\s*\))\s*)\))");
 
         std::vector<Type*> types;
         std::vector<std::string> names;
@@ -34,14 +34,6 @@ namespace SLOT
             if (m[3]=="Bool" || m[8] == "Bool") //Boolean
             {
                 types.push_back(Type::getInt1Ty(lcx));
-            }
-            else if (m[3]=="Int" || m[8] == "Int") //Integer
-            {
-                types.push_back(Type::getIntNTy(lcx,PLACEHOLDER_WIDTH));
-            }
-            else if (m[3]=="Real" || m[8] == "Real")
-            {
-                types.push_back(Type::getIntNTy(lcx,PLACEHOLDER_WIDTH));
             }
             else if (m[6] != "") //Bitvector
             {
@@ -73,7 +65,7 @@ namespace SLOT
             }
             else
             {
-                throw UnsupportedSMTTypeException("unsupported type", names.back());
+                throw UnsupportedTypeException("unsupported SMT variable type", names.back());
             }
             s = m.suffix().str();
         }
@@ -81,7 +73,7 @@ namespace SLOT
 
         //Create function
         FunctionType* fnty = FunctionType::get(Type::getInt1Ty(lcx),types,false);
-        function = Function::Create(fnty, Function::ExternalLinkage, LLVM_FUNCTION_NAME, lmodule);
+        function = Function::Create(fnty, Function::ExternalLinkage, func_name, lmodule);
         //Assign variable types
         int i = 0;
         for (auto &arg : function->args())
@@ -91,11 +83,11 @@ namespace SLOT
             i++;
         }
 
-        contents = scx.parse_string(t_string.c_str());
+        contents = c.parse_string(t_string.c_str());
 
         for (expr e : contents)
         {
-            assertions.push_back(BooleanNode(scx, lcx, lmodule, builder, PLACEHOLDER_WIDTH, variables, e));
+            assertions.push_back(BooleanNode(lcx, lmodule, builder, variables, e));
         }
 
         assert(assertions.size() >= 1);
@@ -119,94 +111,8 @@ namespace SLOT
         builder.CreateRet(temp);
     }
 
-    APInt SMTFormula::LargestIntegerConstant()
-    {
-        APInt val = APInt();
-        for (BooleanNode n : assertions)
-        {
-            val = APMax(val,n.LargestIntegerConstant());
-        }
-        return val;
-    }
-
-    APInt SMTFormula::AbstractSingle(APInt assumption)
-    {
-        APInt val = APInt();
-        for (BooleanNode n : assertions)
-        {
-            val = APMax(val,n.AbstractSingle(assumption));
-        }
-        return val;
-    }
-    void SMTFormula::ToSMT(unsigned width, solver* sol)
-    {
-        std::map<std::string, expr> svariables;
-        for (auto s : variables)
-        {
-            //Assumes only integer/boolean values
-            //1-wide integer --> boolean
-            if (variables[s.first]->getType()->getIntegerBitWidth() == 1)
-            {
-                svariables.insert(make_pair(s.first, scx.bool_const(s.first.c_str())));
-            }
-            else
-            {
-                svariables.insert(make_pair(s.first, scx.bv_const(s.first.c_str(),width)));
-            }
-        }
-
-        for (BooleanNode n : assertions)
-        {
-            sol->add(n.ToSMT(width, svariables,sol));
-        }
-    }
-
-
-
-
-
-    PAIR SMTFormula::LargestPreciseConstant()
-    {
-        PAIR val = {APInt(), 0};
-        for (BooleanNode n : assertions)
-        {
-            val = PairMax(val,n.LargestPreciseConstant());
-        }
-        return val;
-    }
-
-    PAIR SMTFormula::AbstractFloat(PAIR assumption)
-    {
-        PAIR val = {APInt(),0};
-        for (BooleanNode n : assertions)
-        {
-            val = PairMax(val,n.AbstractFloat(assumption));
-        }
-        return val;
-    }
-    void SMTFormula::ToSMTFloat(unsigned ebits, unsigned sbits, solver* sol)
-    {
-        std::map<std::string, expr> svariables;
-        for (auto s : variables)
-        {
-            //Assumes only integer/boolean values
-            //1-wide integer --> boolean
-            if (variables[s.first]->getType()->getIntegerBitWidth() == 1)
-            {
-                svariables.insert(make_pair(s.first, scx.bool_const(s.first.c_str())));
-            }
-            else
-            {
-                svariables.insert(make_pair(s.first, scx.fpa_const(s.first.c_str(),ebits,sbits)));
-            }
-        }
-
-        for (BooleanNode n : assertions)
-        {
-            sol->add(n.ToSMTFloat(scx.fpa_sort(ebits,sbits), svariables));
-        }
-    }
-
+    
+/*
     bool SMTFormula::CheckAssignment(model m)
     {
         solver sol(scx);
@@ -241,13 +147,6 @@ namespace SLOT
             }
         }
 
-        /*for (unsigned i = 0; i < newModel.size(); i++) 
-        {
-            func_decl v = newModel[i];
-            std::cout << v.to_string() << "   " << newModel.get_const_interp(v).simplify().to_string() << "\n";
-            std::cout << m[i].to_string() << "   " << m.get_const_interp(m[i]).simplify().to_string() << "\n";
-        }*/
-
         for (expr e : contents)
         {
             //std::cout << e << "\n";
@@ -262,5 +161,5 @@ namespace SLOT
         //expr result = newModel.eval(expr(scx,contents));
         //std::cout << result.to_string() << "\n";
         //return result.is_true();
-    }
+    }*/
 }

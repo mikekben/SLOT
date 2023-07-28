@@ -2762,7 +2762,7 @@ int main(int argc, char* argv[])
     {
       std::ofstream out(statFilename, std::ios_base::app);
       out << inputFilename << ",true," << usedInstCombine  << "," << usedAInstCombine <<"," <<usedReassociate << "," << usedSCCP << ","<<usedDCE << "," << usedADCE << "," << usedInstSimplify << "," << usedGVN << "\n";
-    }  
+    }
   }
   catch(int i)
   {
