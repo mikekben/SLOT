@@ -15,7 +15,7 @@ LDLIBS= -L /nethome/bmikek3/z3/build/libz3.so -lz3 -L/data/qirun/trunk/root-clan
 main: main.o SMTFormula.o SMTNode.o LLVMFunction.o LLVMNode.o
 	$(CC) $(CPPFLAGS) -o main main.o SMTFormula.o SMTNode.o LLVMFunction.o LLVMNode.o $(LDLIBS)
  
-main.o: main.cpp SMTFormula.h SMTNode.h LLVMFunction.h LLVMNode.h SLOTExceptions.h
+main.o: main.cpp SMTFormula.h SMTNode.h LLVMNode.h SLOTExceptions.h #LLVMFunction.h 
 	$(CC) $(CPPFLAGS) -c main.cpp
  
 SMTNode.o: SMTNode.h SLOTExceptions.h
@@ -27,7 +27,7 @@ LLVMNode.o: LLVMNode.h SLOTExceptions.h
 SMTFormula.o: SMTFormula.h SLOTExceptions.h
 	$(CC) $(CPPFLAGS) -c SMTFormula.cpp
 
-LLVMFunction.o: LLVMFunction.h SLOTExceptions.h
+LLVMFunction.o: LLVMNode.h SLOTExceptions.h
 	$(CC) $(CPPFLAGS) -c LLVMFunction.cpp
 
 clean:

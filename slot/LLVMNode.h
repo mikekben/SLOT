@@ -31,20 +31,43 @@ using namespace z3;
 
 namespace SLOT
 {
+  class LLVMNode;
+  class LLVMFunction;
+
+  class LLVMFunction
+  {
+    public:
+      static int varCounter;
+
+      context &scx;
+      SMTMAPPING variables;
+      Function *contents;
+      bool shiftToMultiply;
+      expr extraVariables; // Hold results of bitcast to bitvector
+
+      expr AddBCVariable(std::unique_ptr<LLVMNode> contents);
+
+      LLVMFunction(bool t_shiftToMultiply, context &t_scx, Function *t_contents);
+      expr ToSMT();
+
+      // bool CheckAssignment(model m);
+  };
+
   class LLVMNode
   {
     public:
       context& scx;
-      const SMTMAPPING& variables;
+      //const SMTMAPPING& variables;
       Value *contents;
       bool shiftToMultiply;
+      LLVMFunction& function;
 
       z3::sort SMTSort();
       unsigned Width();
 
-      static std::unique_ptr<LLVMNode> MakeLLVMNode(bool shiftToMultiply, context& scx, const SMTMAPPING &variables, Value *contents);
+      static std::unique_ptr<LLVMNode> MakeLLVMNode(bool shiftToMultiply, context& scx, LLVMFunction& function, Value *contents);
 
-      LLVMNode(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMNode(bool t_shiftToMultiply, context& t_scx, LLVMFunction& t_function, Value* t_contents);
       virtual ~LLVMNode() {}
       virtual expr ToSMT() = 0;
   };
@@ -53,14 +76,14 @@ namespace SLOT
   {
     public:
       expr ToSMT() override;
-      LLVMArgument(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMArgument(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
   class LLVMConstant : public LLVMNode
   {
     public:
       expr ToSMT() override;
-      LLVMConstant(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMConstant(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
 
@@ -69,12 +92,12 @@ namespace SLOT
   {
     public:
       inline Instruction* AsInstruction() { return (Instruction *)contents; }
-      inline std::unique_ptr<LLVMNode> Child(unsigned n) { return LLVMNode::MakeLLVMNode(shiftToMultiply, scx, variables, AsInstruction()->getOperand(n)); }
+      inline std::unique_ptr<LLVMNode> Child(unsigned n) { return LLVMNode::MakeLLVMNode(shiftToMultiply, scx, function, AsInstruction()->getOperand(n)); }
       inline unsigned Opcode() { return AsInstruction()->getOpcode(); }
       inline expr Zero() { return scx.bv_val(0,Width()); }
 
       expr ToSMT() override;
-      LLVMExpression(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMExpression(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
   class LLVMIcmp : public LLVMExpression
@@ -84,7 +107,7 @@ namespace SLOT
       inline CmpInst::Predicate Predicate() { return ((ICmpInst*)contents)->getPredicate(); }
 
       expr ToSMT() override;
-      LLVMIcmp(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMIcmp(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
   class LLVMFcmp : public LLVMExpression
@@ -94,7 +117,7 @@ namespace SLOT
       inline CmpInst::Predicate Predicate() { return ((FCmpInst*)contents)->getPredicate(); }
 
       expr ToSMT() override;
-      LLVMFcmp(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMFcmp(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
   class LLVMIntrinsicCall : public LLVMExpression
@@ -102,8 +125,10 @@ namespace SLOT
     public:
       static expr FPClassCheck(context& scx, expr val, int64_t bits);
 
+      expr AsRoundingMode(unsigned n);
+
       expr ToSMT() override;
-      LLVMIntrinsicCall(bool t_shiftToMultiply, context& t_scx, const SMTMAPPING& t_variables, Value* t_contents);
+      LLVMIntrinsicCall(bool t_shiftToMultiply, context& t_scx, LLVMFunction& function, Value* t_contents);
   };
 
   

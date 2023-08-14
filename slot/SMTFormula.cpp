@@ -20,15 +20,25 @@ namespace SLOT
 
         std::vector<Type*> types;
         std::vector<std::string> names;
-        while (std::regex_search (s,m,e)) 
+        std::string temp = "";
+        while (std::regex_search(s, m, e))
         {
             if (m[2]!="")
             {
-                names.push_back(m[2]);
+                temp = m[2];
             }
             else
             {
-                names.push_back(m[7]);
+                temp = m[7];
+            }
+
+            if (temp[0] == '|')
+            {
+                names.push_back(temp.substr(1, temp.length() - 2));
+            }
+            else
+            {
+                names.push_back(temp);
             }
             
             if (m[3]=="Bool" || m[8] == "Bool") //Boolean
@@ -90,76 +100,32 @@ namespace SLOT
             assertions.push_back(BooleanNode(lcx, lmodule, builder, variables, e));
         }
 
-        assert(assertions.size() >= 1);
+        //assert(assertions.size() >= 1);
     }
 
     void SMTFormula::ToLLVM()
     {
         BasicBlock* bb = BasicBlock::Create(lcx, "b", function);
         builder.SetInsertPoint(bb);
-
-        Value* temp = assertions[0].ToLLVM();
-        //Conjunction of all assertions
-        if (assertions.size() > 1)
+        
+        if (assertions.size() == 0)
         {
-            for (int i = 1; i < assertions.size(); i++)
-            {
-                temp = builder.CreateAnd(temp,assertions[i].ToLLVM());
-            }
+            //Empty constraint is sat
+            builder.CreateRet(ConstantInt::getBool(lcx, true));
         }
+        else
+        {
+            Value* temp = assertions[0].ToLLVM();
+            //Conjunction of all assertions
+            if (assertions.size() > 1)
+            {
+                for (int i = 1; i < assertions.size(); i++)
+                {
+                    temp = builder.CreateAnd(temp,assertions[i].ToLLVM());
+                }
+            }
 
-        builder.CreateRet(temp);
+            builder.CreateRet(temp);
+        }
     }
-
-    
-/*
-    bool SMTFormula::CheckAssignment(model m)
-    {
-        solver sol(scx);
-
-        sol.add(contents);
-
-        model newModel(scx);
-        // traversing the model
-        for (unsigned i = 0; i < m.size(); i++) 
-        {
-            func_decl v = m[i];
-            assert(v.arity() == 0); 
-            expr interpretation = m.get_const_interp(v);
-            expr temp(scx);
-            func_decl declaration(scx);
-
-            if (interpretation.is_bool())
-            {
-                newModel.add_const_interp(v,interpretation);
-            }
-            else if (interpretation.is_bv())
-            {
-                temp = bv2int(interpretation, true);
-                declaration = scx.function(v.name(), 0, NULL, scx.int_sort());
-                newModel.add_const_interp(declaration,temp);
-            }
-            else if (interpretation.is_fpa())
-            {
-                temp = expr(scx,Z3_mk_fpa_to_real(scx, interpretation));
-                declaration = scx.function(v.name(),0,NULL,scx.real_sort());
-                newModel.add_const_interp(declaration,temp);
-            }
-        }
-
-        for (expr e : contents)
-        {
-            //std::cout << e << "\n";
-            expr val = newModel.eval(e);
-            //std::cout << val.simplify() << "\n";
-            if (!val.simplify().is_true())
-            {
-                return false;
-            }
-        }
-        return true;
-        //expr result = newModel.eval(expr(scx,contents));
-        //std::cout << result.to_string() << "\n";
-        //return result.is_true();
-    }*/
 }

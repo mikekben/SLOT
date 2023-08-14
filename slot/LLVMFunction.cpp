@@ -1,4 +1,4 @@
-#include "LLVMFunction.h"
+#include "LLVMNode.h"
 #include "SLOTExceptions.h"
 #include <regex>
 
@@ -9,7 +9,7 @@
 namespace SLOT
 {
 
-    LLVMFunction::LLVMFunction(bool t_shiftToMultiply, context& t_scx, Function* t_contents) : shiftToMultiply(t_shiftToMultiply), scx(t_scx), contents(t_contents)
+    LLVMFunction::LLVMFunction(bool t_shiftToMultiply, context& t_scx, Function* t_contents) : shiftToMultiply(t_shiftToMultiply), scx(t_scx), contents(t_contents), extraVariables(t_scx)
     {
         scx.set_rounding_mode(RNE);
         for (Argument* arg = contents->arg_begin(); arg < contents->arg_end(); arg++)
@@ -53,8 +53,21 @@ namespace SLOT
         }
     }
 
+    //For fp to bv bitcast, create a new variable and constraint it equal at the top level
+    expr LLVMFunction::AddBCVariable(std::unique_ptr<LLVMNode> contents)
+    {
+        std::string name = "_slot_smtbc_" + std::to_string(LLVMFunction::varCounter) + "_";
+        expr var = scx.bv_const(name.c_str(), contents->Width());
+        variables.insert(make_pair(name, var));
+        expr added = (var.mk_from_ieee_bv(contents->SMTSort()) == contents->ToSMT());
+        extraVariables = (LLVMFunction::varCounter == 0) ? added : (extraVariables && added);
+        LLVMFunction::varCounter++;
+        return var;
+    }
+
     expr LLVMFunction::ToSMT()
     {
-        return LLVMNode::MakeLLVMNode(shiftToMultiply, scx, variables, ((ReturnInst *)contents->getEntryBlock().getTerminator())->getOperand(0))->ToSMT();
+        expr fromChildren = LLVMNode::MakeLLVMNode(shiftToMultiply, scx, *this, ((ReturnInst *)contents->getEntryBlock().getTerminator())->getOperand(0))->ToSMT();
+        return (LLVMFunction::varCounter == 0) ? fromChildren : (extraVariables && fromChildren);    
     }
 }

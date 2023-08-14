@@ -49,9 +49,16 @@ namespace SLOT
       bool noOverflow = true;
 
       //Z3 ''constants'' can be either variables or constants
-      inline bool IsVariable() { return contents.is_const() && variables.count(contents.to_string()); }
-      inline bool IsConstant() { return contents.is_const() && !variables.count(contents.to_string()); }
+      inline std::string StrippedName() { return ((contents.to_string()[0] == '|') ? contents.to_string().substr(1, contents.to_string().length() - 2) : contents.to_string()); }
+      inline bool IsVariable() { return contents.is_const() && variables.count(StrippedName()); }
+      inline bool IsConstant() { return contents.is_const() && !variables.count(StrippedName()); }
       inline Z3_decl_kind Op() { return contents.decl().decl_kind(); }
+
+      inline Z3_decl_kind RoundingMode() { return ((contents.arg(0).get_sort().sort_kind() == Z3_ROUNDING_MODE_SORT) ? contents.arg(0).decl().decl_kind() : Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN); }
+      inline bool IsRNE() { return RoundingMode() == Z3_OP_FPA_RM_NEAREST_TIES_TO_EVEN; }
+
+      MetadataAsValue* LLVMRoundingMode();
+      MetadataAsValue* LLVMException();
 
       //Syntax sugar for extracting children
       inline FloatingNode FloatingChild(expr cont);
@@ -79,7 +86,6 @@ namespace SLOT
       
       static Type* ToFloatingType(LLVMContext& lcx, std::string name, unsigned width);
       inline Type* FloatingType() { return FloatingNode::ToFloatingType(lcx, contents.to_string(), Width()); }  
-      
 
       Value * LLVMClassCheck(Z3_decl_kind op);
       Value * LLVMEq(FloatingNode other);

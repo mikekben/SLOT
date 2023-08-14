@@ -1,5 +1,5 @@
 #include "SMTFormula.h"
-#include "LLVMFunction.h"
+#include "LLVMNode.h"
 #include <fstream>
 #include <streambuf>
 #include <sstream>
@@ -13,6 +13,7 @@
 #include "llvm/Transforms/Scalar/ADCE.h"
 #include "llvm/Transforms/Scalar/InstSimplifyPass.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/EarlyCSE.h"
 
 #ifndef LLMAPPING
 #define LLMAPPING std::map<std::string, Value*>&
@@ -153,6 +154,8 @@ unsigned short RunPasses(unsigned short flags, Function& fun)
     }
   }
 
+  EarlyCSEPass().run(fun, FAM);
+
   if (flags & REASSOCIATE)
   {
     ReassociatePass().run(fun, FAM);
@@ -236,6 +239,8 @@ unsigned short RunPasses(unsigned short flags, Function& fun)
   return used;
 }
 
+
+int LLVMFunction::varCounter = 0;
 
 
 
@@ -344,12 +349,13 @@ int main(int argc, char* argv[])
   char * statsFilename;
   if(HasFlag(argc, argv, "-t") && (statsFilename = GetFlag(argc, argv, "-t")))
   {
-    std::ofstream out(outputFilename);
-    out << inputFilename << "," << (shiftToMultiply ? "true" : "false") << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
+    std::ofstream out;
+    out.open(statsFilename, std::ios_base::app);
+    out << inputFilename << "," << (shiftToMultiply ? "true" : "false") << "," << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
   }
   else
   {
-    std::cout << inputFilename << "," << (shiftToMultiply ? "true" : "false") << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
+    std::cout << inputFilename << "," << (shiftToMultiply ? "true" : "false") << "," << PrintPasses(parsedPasses) << "," << frontTime.count() << "," << optTime.count() << "," << backTime.count() << "," << PrintPasses(usedPasses) << "\n";
   }
   
 }
