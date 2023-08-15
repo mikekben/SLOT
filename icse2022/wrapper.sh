@@ -1,1 +1,0 @@
-./runthrough.sh -z -c -b -t 600 -f $1
