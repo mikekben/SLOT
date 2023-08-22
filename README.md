@@ -1,6 +1,5 @@
 # SLOT Readme
 
-
 ## About
 SLOT (SMT-LLVM Optimizing Translation) is a software tool that speeds up SMT solving in a solver-agnostic way by simplifying constraints. It converts SMT constraints to LLVM, applies the existing LLVM optimizer, and translates back.
 
