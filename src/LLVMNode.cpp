@@ -1,6 +1,9 @@
 #include "LLVMNode.h"
 #include "SLOTExceptions.h"
 
+// Does not support any constants whose string expression
+// (base 10) is more than CONSTANT_STRING_MAX_WIDTH
+#define CONSTANT_STRING_MAX_WIDTH 2048
 
 #ifndef SMTMAPPING
 #define SMTMAPPING std::map<std::string, expr>
@@ -141,24 +144,16 @@ namespace SLOT
         }
         else if (SMTSort().is_bv())
         {
-            return scx.bv_val(toString(((Constant*)contents)->getUniqueInteger(),10,false).c_str(), Width());
+            SmallString<CONSTANT_STRING_MAX_WIDTH> str;
+            ((Constant*)contents)->getUniqueInteger().toString(str,10,false);
+            return scx.bv_val(str.c_str(), Width());
         }
         else //FPA case
         {
-            std::string type_str;
-            llvm::raw_string_ostream rso(type_str);
-            ((ConstantFP*)contents)->getValue().print(rso);
-            
             //bitcastToAPInt
-            return scx.bv_val(toString(((ConstantFP *)contents)->getValue().bitcastToAPInt(), 10, false).c_str(), Width()).mk_from_ieee_bv(SMTSort());
-            
-            /*
-            std::cout << rso.str() << "\n";
-            char s[100];
-            ((ConstantFP*)contents)->getValue().convertToHexString(s, 0, true, RoundingMode::NearestTiesToEven);
-            std::cout << "~~~~~~~~~ " << s << "\n";
-            return scx.bv_val(s, Width()).mk_from_ieee_bv(SMTSort());
-            */
+            SmallString<CONSTANT_STRING_MAX_WIDTH> str;
+            ((ConstantFP *)contents)->getValue().bitcastToAPInt().toString(str, 10, false);
+            return scx.bv_val(str.c_str(), Width()).mk_from_ieee_bv(SMTSort());
         }
     }
 

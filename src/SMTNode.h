@@ -19,6 +19,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <iostream>
+#include <map>
 
 #include"z3++.h"
 

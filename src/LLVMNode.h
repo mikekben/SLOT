@@ -1,5 +1,6 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -19,6 +20,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <iostream>
+#include <map>
 
 #include"z3++.h"
 
