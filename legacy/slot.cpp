@@ -865,7 +865,7 @@ ExprBitvectorSMT::ExprBitvectorSMT(std::map<std::string, Value *> t_variables, e
         children.push_back(BitvectorSMT::MakeBitvectorSMT(variables,contents.arg(i)));
     }
   }
-  //Special operations paramaterized by integers (repeat can be infered from types)
+  //Special operations parameterized by integers (repeat can be inferred from types)
   if (op == Z3_OP_EXTRACT)
   {
     params.push_back(contents.hi());
@@ -1094,7 +1094,7 @@ Value * ExprBitvectorSMT::codegen()
   }
   else
   {
-    throw std::out_of_range("Unsupported bitvector opration.");
+    throw std::out_of_range("Unsupported bitvector operation.");
   }
 }
 
@@ -1312,7 +1312,7 @@ Value * ExprBooleanSMT::codegen()
     assert(children.size()==2);
     return Builder->CreateFCmpOGE(children[0]->codegen(), children[1]->codegen());
   }
-  //Floating point class check (7 differnt ops)
+  //Floating point class check (7 different ops)
   else if (FloatingSMT::IsClassCheck(op))
   {
     assert(children.size()==1);
@@ -2308,7 +2308,7 @@ static expr ToSMTConstant(context* c, std::map<std::string, expr> variables, Con
 static expr ToSMTIntrinsic(context* c, std::map<std::string, expr> variables, CallInst* val)
 {
   Intrinsic::ID id = val->getCalledFunction()->getIntrinsicID();
-  //Intrinsics which are resonable in the integer context
+  //Intrinsics which are reasonable in the integer context
   if (id==Intrinsic::abs)
   {
     expr arg = ToSMT(c, variables, val->getOperand(0));

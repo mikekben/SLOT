@@ -60,8 +60,8 @@ The SLOT executable takes the following terminal flags and arguments (which can 
 -h            : See help menu
 -s <file>     : The input SMTLIB2 format file (required)
 -o <file>     : The output file. If not provided, output is sent to stdout
--lu <file>    : Output intermediade LLVM IR before optimization (optional)
--lo <file>    : Output intermediade LLVM IR after optimization (optional)
+-lu <file>    : Output intermediate LLVM IR before optimization (optional)
+-lo <file>    : Output intermediate LLVM IR after optimization (optional)
 -m            : Convert constant shifts to multiplication
 -t <file>     : Output statistics file. If not provided, output is sent to stdout
 
@@ -73,7 +73,7 @@ The SLOT executable takes the following terminal flags and arguments (which can 
 -reassociate  : Run reassociate pass
 -sccp         : Run sparse conditional constant propagation (SCCP) pass
 -dce          : Run dead code elimination (DCE) pass
--adce         : Run aggressive dead code elminination (ADCE) pass
+-adce         : Run aggressive dead code elimination (ADCE) pass
 -instsimplify : Run instsimplify pass
 -gvn          : Run global value numbering (GVN) pass
 ```

@@ -180,8 +180,8 @@ def ifun(node, name):
 
 def class_to_bits(name):
     bits_dict = {
-        'nan':          3,          #0000000011 = signalging nan, quiet nan
-        'infinite':     516,        #1000000100 = signalging nan, quiet nan
+        'nan':          3,          #0000000011 = signaling nan, quiet nan
+        'infinite':     516,        #1000000100 = signaling nan, quiet nan
         'zero':         96,         #0001100000 = negative zero, positive zero
         'normal':       264,        #0100001000 = negative normal, positive normal
         'subnormal':    144,        #0010010000 = negative subnormal, positive subnormal
@@ -316,7 +316,7 @@ def build_constraint(node, builder, fun_args):
             raise Exception("Unexpected constraint operation: "+str(node))
 
 def build_fp_comparison(node, builder, fun_args):
-    #print("buildling fp comparison "+str(node))
+    #print("building fp comparison "+str(node))
     left = build_fp_value(node.children()[0],builder,fun_args)
     if len(node.children())==2:
         right = build_fp_value(node.children()[1], builder, fun_args)
@@ -342,7 +342,7 @@ def build_fp_comparison(node, builder, fun_args):
         raise Exception("Unexpected floating point comparison operation: "+str(node))
 
 def build_bv_comparison(node, builder, fun_args):
-    #print("buildling bv comparison "+str(node))
+    #print("building bv comparison "+str(node))
     left = build_bv_value(node.children()[0],builder,fun_args)
     right = build_bv_value(node.children()[1], builder, fun_args)
 
@@ -361,7 +361,7 @@ def build_bv_comparison(node, builder, fun_args):
 def build_fp_value(node, builder, fun_args):
     #print("building fp value "+str(node))
 
-    #Check that the rounding mode is suppored (only round to nearest in LLVM)
+    #Check that the rounding mode is supported (only round to nearest in LLVM)
     if is_fprm(node):
         if node == RoundNearestTiesToEven():
             return None
