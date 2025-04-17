@@ -61,7 +61,7 @@ namespace SLOT
 
     BooleanNode::BooleanNode(LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, const LLMAPPING& t_variables, expr t_contents) : SMTNode(t_lcx, t_lmodule, t_builder, t_variables, t_contents)
     {
-        //Sanity check for translation from Z3 expresssions
+        //Sanity check for translation from Z3 expressions
         assert(contents.is_bool());
     }
 
@@ -258,7 +258,7 @@ namespace SLOT
 
     BitvectorNode::BitvectorNode(LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, const LLMAPPING& t_variables, expr t_contents) : SMTNode(t_lcx, t_lmodule, t_builder, t_variables, t_contents)
     {
-        //Sanity check for translation from Z3 expresssions
+        //Sanity check for translation from Z3 expressions
         assert(contents.is_bv());
     }
 
@@ -511,7 +511,7 @@ namespace SLOT
 
     const std::map<Z3_decl_kind, int> FloatingNode::class_flags =  
     {
-        {Z3_OP_FPA_IS_NAN,        3},   //0000000011 = signalging nan, quiet nan
+        {Z3_OP_FPA_IS_NAN,        3},   //0000000011 = signaling nan, quiet nan
         {Z3_OP_FPA_IS_INF,        516}, //1000000100 = negative infinity, positive infinity
         {Z3_OP_FPA_IS_ZERO,       96},  //0001100000 = negative zero, positive zero
         {Z3_OP_FPA_IS_NORMAL,     264}, //0100001000 = negative normal, positive normal
@@ -568,7 +568,7 @@ namespace SLOT
     FloatingNode::FloatingNode(LLVMContext& t_lcx, Module* t_lmodule, IRBuilder<>& t_builder, const LLMAPPING& t_variables, expr t_contents) : SMTNode(t_lcx, t_lmodule, t_builder, t_variables, t_contents)
     {
 
-        //Sanity check for translation from Z3 expresssions
+        //Sanity check for translation from Z3 expressions
         assert(contents.is_fpa());
     }
 

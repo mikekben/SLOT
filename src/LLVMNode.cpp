@@ -236,7 +236,7 @@ namespace SLOT
     expr LLVMIntrinsicCall::ToSMT()
     {
         Intrinsic::ID id = ((CallInst*)contents)->getCalledFunction()->getIntrinsicID();
-        //Intrinsics which are resonable in the integer context
+        //Intrinsics which are reasonable in the integer context
         expr arg(scx);
         expr left(scx);
         expr right(scx);

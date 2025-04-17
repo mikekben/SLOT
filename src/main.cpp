@@ -33,8 +33,8 @@ void Help()
     std::cout << "   -h             : See help menu\n";
     std::cout << "   -s <file>      : The input SMTLIB2 format file (required)\n";
     std::cout << "   -o <file>      : The output file. If not provided, output is sent to stdout\n";
-    std::cout << "   -lu <file>     : Output intermediade LLVM IR before optimization (optional)\n";
-    std::cout << "   -lo <file>     : Output intermediade LLVM IR after optimization (optional)\n";
+    std::cout << "   -lu <file>     : Output intermediate LLVM IR before optimization (optional)\n";
+    std::cout << "   -lo <file>     : Output intermediate LLVM IR after optimization (optional)\n";
     std::cout << "   -m             : Convert constant shifts to multiplication\n";
     std::cout << "   -t <file>      : Output statistics file. If not provided, output is sent to stdout\n";
     std::cout << "   -pall          : Run all relevant passes (roughly equivalent to -O3 in LLVM). By default, no passes are run\n";
@@ -43,7 +43,7 @@ void Help()
     std::cout << "   -reassociate   : Run reassociate pass\n";
     std::cout << "   -sccp          : Run sparse conditional constant propagation (SCCP) pass\n";
     std::cout << "   -dce           : Run dead code elimination (DCE) pass\n";
-    std::cout << "   -adce          : Run aggressive dead code elminination (ADCE) pass\n";
+    std::cout << "   -adce          : Run aggressive dead code elimination (ADCE) pass\n";
     std::cout << "   -instsimplify  : Run instsimplify pass\n";
     std::cout << "   -gvn           : Run global value numbering (GVN) pass\n";
 }
@@ -117,7 +117,7 @@ std::string PrintPasses(unsigned short flags)
 
 unsigned short RunPasses(unsigned short flags, Function& fun)
 {
-  //instcombine and agressive instcombine are run twice, according to the -O3 optimization pass sequence
+  //instcombine and aggressive instcombine are run twice, according to the -O3 optimization pass sequence
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
